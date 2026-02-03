@@ -5,6 +5,7 @@ import { defineConfig, loadEnv } from 'vite'
 import { sentryVitePlugin } from "@sentry/vite-plugin";
 import { VitePWA } from 'vite-plugin-pwa'
 import wasm from "vite-plugin-wasm"
+import viteCompression from 'vite-plugin-compression'
 const { name } = require('./package.json')
 
 process.env.PROJECT_NAME = name
@@ -78,6 +79,14 @@ export default defineConfig(({ command, mode }) => {
           })
         }
       },
+      // Pre-compress assets for smaller Docker image and faster delivery
+      viteCompression({
+        algorithm: 'gzip',
+        ext: '.gz',
+        threshold: 1024, // Only compress files > 1KB
+        deleteOriginFile: true, // Remove uncompressed files to reduce image size
+        filter: /\.(js|css|html|json|svg|txt|xml|wasm)$/i,
+      }),
       // Remove non-JSON files from ArduPilot parameter repository to reduce image size
       {
         name: 'cleanup-ardupilot-files',
