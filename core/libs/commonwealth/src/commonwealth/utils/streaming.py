@@ -96,7 +96,7 @@ async def _fetch_stream(
         await queue.put((None, None))
 
 
-async def timeout_streamer(gen: AsyncGenerator[str | bytes, None], timeout: int = 3) -> AsyncGenerator[str, None]:
+async def timeout_streamer(gen: AsyncGenerator[str | bytes, None], timeout: int = 10) -> AsyncGenerator[str, None]:
     """
     Streamer wrapper for async generators and provide a consistent response format
     with error handling with additional timeout limit for each item iteration.
