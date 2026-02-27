@@ -251,7 +251,7 @@ jobs:
 
   deploy-raspberry-image:
     needs: deploy-docker-images
-    if: github.event_name != 'pull_request' && github.repository_owner == 'bluerobotics'
+    if: github.event_name != 'pull_request'
     timeout-minutes: 180 # Detect if it gets into an infinite loop or some unexpected state
     strategy:
       fail-fast: false
@@ -369,18 +369,18 @@ jobs:
             echo "ASSET_NAME_SUFFIX=-pi4" >> $GITHUB_ENV
           fi
 
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v4
-        if: startsWith(github.ref, 'refs/tags/')
-        with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-          aws-region: us-east-2
+      # - name: Configure AWS credentials
+      #   uses: aws-actions/configure-aws-credentials@v4
+      #   if: startsWith(github.ref, 'refs/tags/')
+      #   with:
+      #     aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+      #     aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+      #     aws-region: us-east-2
 
-      - name: Upload to S3
-        if: startsWith(github.ref, 'refs/tags/')
-        run: |
-          aws s3 cp BlueOS-raspberry-${{ env.SANITIZED_PLATFORM }}-${{ matrix.os }}.zip s3://blueos-downloads/releases/${{ github.ref_name }}/
+      # - name: Upload to S3
+      #   if: startsWith(github.ref, 'refs/tags/')
+      #   run: |
+      #     aws s3 cp BlueOS-raspberry-${{ env.SANITIZED_PLATFORM }}-${{ matrix.os }}.zip s3://blueos-downloads/releases/${{ github.ref_name }}/
 
       - name: Check file size
         id: check_size
