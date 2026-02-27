@@ -338,11 +338,19 @@ jobs:
       - name: Sanitize platform name
         run: echo "SANITIZED_PLATFORM=$(echo ${{ matrix.platform }} | tr '/' '-')" >> $GITHUB_ENV
 
+      - name: Set asset name
+        run: |
+          if [[ ${{ matrix.runner }} == 'pi5-builder' ]]; then
+            echo "ASSET_NAME_SUFFIX=-pi5" >> $GITHUB_ENV
+          elif [[ ${{ matrix.os }} == 'bullseye' ]]; then
+            echo "ASSET_NAME_SUFFIX=-pi4" >> $GITHUB_ENV
+          fi
+
       - name: Zip image
         run: |
           sudo apt install zip
-          zip -9 BlueOS-raspberry-${{ env.SANITIZED_PLATFORM }}-${{ matrix.os }}.zip deploy/pimod/blueos.img
-          ls -lah BlueOS-raspberry-${{ env.SANITIZED_PLATFORM }}-${{ matrix.os }}.zip
+          zip -9 -s 2000m BlueOS-raspberry-${{ env.SANITIZED_PLATFORM }}-${{ matrix.os }}${{ env.ASSET_NAME_SUFFIX }}.zip deploy/pimod/blueos.img
+          ls -lah BlueOS-raspberry-${{ env.SANITIZED_PLATFORM }}-${{ matrix.os }}*
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -391,8 +399,9 @@ jobs:
         if: startsWith(github.ref, 'refs/tags/') && steps.check_size.outputs.upload_allowed == 'true'
         with:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
-          file: BlueOS-raspberry-${{ env.SANITIZED_PLATFORM }}-${{ matrix.os }}.zip
-          asset_name: BlueOS-raspberry-${{ env.SANITIZED_PLATFORM }}-${{ matrix.os }}${{ env.ASSET_NAME_SUFFIX }}.zip
+          # Matches single .zip or multi-volume .z01, .z02, ..., .zip
+          file: BlueOS-raspberry-${{ env.SANITIZED_PLATFORM }}-${{ matrix.os }}${{ env.ASSET_NAME_SUFFIX }}.z*
+          file_glob: true
           tag: ${{ github.ref }}
           overwrite: true
           prerelease: true
