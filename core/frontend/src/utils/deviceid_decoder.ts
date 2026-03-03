@@ -1,6 +1,7 @@
 // based on https://github.com/ArduPilot/ardupilot/blob/master/Tools/scripts/decode_devid.py
 
 export enum BUS_TYPE {
+  UNKNOWN = 0,
   I2C = 1,
   SPI = 2,
   UAVCAN = 3,
@@ -8,6 +9,7 @@ export enum BUS_TYPE {
   MSP = 5,
   SERIAL = 6,
   QSPI = 7,
+  NETWORK = 8,
 }
 
 enum COMPASS_TYPE {
@@ -32,6 +34,7 @@ enum COMPASS_TYPE {
   MMC5883 = 0x13,
   AK09918 = 0x14,
   AK09915 = 0x15,
+  NUCLEUS = 0x1A,
 }
 
 enum IMU_TYPE {
@@ -69,6 +72,8 @@ enum IMU_TYPE {
   INS_BMI270 = 0x38,
   INS_BMI085 = 0x39,
   INS_ICM42670 = 0x3A,
+  INS_NUCLEUS_GYRO = 0x3E,
+  INS_NUCLEUS_ACCEL = 0x3F,
 }
 
 enum BARO_TYPE {
@@ -97,6 +102,7 @@ enum BARO_TYPE {
   SPA06 = 0x16,
   AUAV = 0x17,
   MS5837_02BA = 0x18,
+  NUCLEUS = 0x19,
 }
 
 enum AIRSPEED_TYPE {
@@ -129,10 +135,10 @@ export interface deviceId {
 }
 
 export default function decode(device: string, devid: number): deviceId {
-  const busType = devid & 0x07 as BUS_TYPE
-  const bus = devid >> 3 & 0x1F
+  const busType = devid & 0x0F as BUS_TYPE
+  const bus = devid >> 4 & 0x0F
   const address = devid >> 8 & 0xFF
-  const devtype = devid >> 16
+  const devtype = devid >> 16 & 0xFF
   // set deviceIdNumber to the last number of the "device" string or 1 if it's not a number
   const deviceIdNumber = parseInt(device.slice(-1), 10) || 1
 
