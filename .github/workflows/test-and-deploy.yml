@@ -251,7 +251,7 @@ jobs:
 
   deploy-raspberry-image:
     needs: deploy-docker-images
-    if: github.event_name != 'pull_request' && github.repository_owner == 'bluerobotics'
+    if: github.event_name != 'pull_request'
     timeout-minutes: 180 # Detect if it gets into an infinite loop or some unexpected state
     strategy:
       fail-fast: false
@@ -369,10 +369,10 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: us-east-2
 
-      - name: Upload to S3
-        if: startsWith(github.ref, 'refs/tags/')
-        run: |
-          aws s3 cp deploy/pimod/blueos.img s3://blueos-downloads/releases/${{ github.ref_name }}/BlueOS-raspberry-${{ env.SANITIZED_PLATFORM }}-${{ matrix.os }}${{ env.ASSET_NAME_SUFFIX }}.img
+      # - name: Upload to S3
+      #   if: startsWith(github.ref, 'refs/tags/')
+      #   run: |
+      #     aws s3 cp deploy/pimod/blueos.img s3://blueos-downloads/releases/${{ github.ref_name }}/BlueOS-raspberry-${{ env.SANITIZED_PLATFORM }}-${{ matrix.os }}${{ env.ASSET_NAME_SUFFIX }}.img
 
       - name: Upload raspberry image for release
         uses: svenstaro/upload-release-action@v2
