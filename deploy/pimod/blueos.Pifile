@@ -22,3 +22,6 @@ RUN bash -c '
   chmod +x install.sh
   USER=pi ./install.sh --ci-run
 '
+
+ZERO
+SHRINK
