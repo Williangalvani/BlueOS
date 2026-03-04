@@ -307,7 +307,7 @@ jobs:
       # We use our own pimod as upstream doesn't provide armv7 images
       - name: Pimod Build
         run: |
-          PIMOD_VERSION=v0.7.0
+          PIMOD_VERSION=v0.9.1
           VERSION=$GITHUB_REPOSITORY
           VERSION=${VERSION:-master}
           wget https://raw.githubusercontent.com/Nature40/pimod/${PIMOD_VERSION}/pimod.sh && chmod +x pimod.sh
