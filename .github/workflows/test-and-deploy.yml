@@ -251,7 +251,7 @@ jobs:
 
   deploy-raspberry-image:
     needs: deploy-docker-images
-    if: github.event_name != 'pull_request' && github.repository_owner == 'bluerobotics'
+    if: github.event_name != 'pull_request'
     timeout-minutes: 180 # Detect if it gets into an infinite loop or some unexpected state
     strategy:
       fail-fast: false
