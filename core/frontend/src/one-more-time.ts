@@ -1,3 +1,15 @@
+import frontend, { PageState, subscribeToPageState } from '@/store/frontend'
+
+/**
+ * Multipliers for the delay of the OneMoreTime () tasks based on the page state
+ * @type {Record<PageState, number>}
+ */
+export const PAGE_STATE_MULTIPLIERS: Record<PageState, number> = {
+    focused: 1,
+    blurred: 5,
+    hidden: 10,
+  }
+
 /**
  * Represents a function that can be OneMoreTime valid action
  */
@@ -39,6 +51,13 @@ export interface OneMoreTimeOptions {
    * OneMoreTime instance.
    */
   disposeWith?: unknown
+
+  /**
+   * If true, disables automatic throttling when the page loses focus or becomes hidden.
+   * By default, delays are multiplied by 2 when the page is unfocused and by 10 when hidden.
+   * @type {boolean}
+   */
+  disablePageThrottle?: boolean
 }
 
 /**
@@ -55,6 +74,8 @@ export class OneMoreTime {
 
   private timeoutId?: ReturnType<typeof setTimeout>
 
+  private unsubscribePageState?: () => void
+
   /**
    * Constructs an instance of OneMoreTime, optionally starting the action immediately.
    * @param {OneMoreTimeOptions} options Configuration options for the instance.
@@ -65,8 +86,31 @@ export class OneMoreTime {
     private action?: OneMoreTimeAction,
   ) {
     this.watchDisposeWith()
+    this.subscribeToPageState()
     // One more time
     this.softStart()
+  }
+
+  private subscribeToPageState(): void {
+    if (this.options.disablePageThrottle || typeof document === 'undefined') return
+    this.unsubscribePageState = subscribeToPageState((state, previous) => {
+      this.onPageStateChange(state, previous)
+    })
+  }
+
+  private onPageStateChange(state: PageState, previous: PageState): void {
+    if (this.isDisposed || this.isPaused || this.isRunning || !this.timeoutId) return
+
+    if (PAGE_STATE_MULTIPLIERS[state] < PAGE_STATE_MULTIPLIERS[previous]) {
+      this.killTask()
+      this.start()
+    }
+  }
+
+  private getEffectiveDelay(baseDelay?: number): number | undefined {
+    if (baseDelay === undefined) return undefined
+    if (!this.unsubscribePageState) return baseDelay
+    return baseDelay * PAGE_STATE_MULTIPLIERS[frontend.page_state]
   }
 
   private killTask(): void {
@@ -85,6 +129,7 @@ export class OneMoreTime {
         // eslint-disable-next-line
         if (!ref.deref() || ref.deref()._isDestroyed) {
           this.isDisposed = true
+          this.unsubscribePageState?.()
           this.killTask()
           clearInterval(id)
         }
@@ -95,6 +140,7 @@ export class OneMoreTime {
   // Celebrate and dance so free
   [Symbol.dispose](): void {
     this.isDisposed = true
+    this.unsubscribePageState?.()
     this.killTask()
   }
 
@@ -150,13 +196,13 @@ export class OneMoreTime {
       this.options.onError?.(error)
       // Oh yeah, alright, don't stop the dancing
       // eslint-disable-next-line no-promise-executor-return
-      await new Promise((resolve) => setTimeout(resolve, this.options.errorDelay))
+      await new Promise((resolve) => setTimeout(resolve, this.getEffectiveDelay(this.options.errorDelay)))
     } finally {
       this.isRunning = false
     }
 
     if (!this.isPaused && !this.isDisposed) {
-      this.timeoutId = setTimeout(() => this.start(), this.options.delay)
+      this.timeoutId = setTimeout(() => this.start(), this.getEffectiveDelay(this.options.delay))
     }
   }
 
