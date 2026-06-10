@@ -168,7 +168,7 @@ then
 
     # Download Docker-in-Docker scripts
     # This is used to allow running dockers from within other dockers, as this scripts usually runs in a docker in CI.
-    DIND_COMMIT="52379fa76dee07ca038624d639d9e14f4fb719ff"
+    DIND_COMMIT="5395052782c7ab542064a502ba574ec12ca8e10f"
     curl -fL -o /usr/local/bin/dind "https://raw.githubusercontent.com/moby/moby/${DIND_COMMIT}/hack/dind" && chmod +x /usr/local/bin/dind
 
     addgroup --system dockremap && \
