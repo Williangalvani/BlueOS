@@ -176,7 +176,12 @@ then
     echo 'dockremap:165536:65536' >> /etc/subuid && \
     echo 'dockremap:165536:65536' >> /etc/subgid
 
-    dind dockerd $DOCKER_EXTRA_OPTS &
+    # Pull images into the system containerd (data-root /var/lib/containerd) instead of
+    # dockerd's self-managed containerd (/var/lib/docker/containerd). On Docker 29 the
+    # booted docker.service always talks to the system containerd at
+    # /run/containerd/containerd.sock, so the build must use the same socket or the
+    # pulled images won't be visible on the device.
+    dind bash -c "containerd & for _ in \$(seq 1 60); do [ -S /run/containerd/containerd.sock ] && break; sleep 1; done; exec dockerd --containerd=/run/containerd/containerd.sock $DOCKER_EXTRA_OPTS" &
       while(! docker info > /dev/null 2>&1); do
         echo "==> Waiting for the Docker daemon to come online..."
         sleep 1
