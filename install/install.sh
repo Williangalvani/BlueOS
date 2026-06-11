@@ -163,6 +163,22 @@ docker --version || curl -fsSL https://get.docker.com | env -u VERSION sh || (
 
 systemctl enable docker
 
+# Docker 29+ defaults to the containerd image store (containerd-snapshotter=true).
+# That store breaks BlueOS in two ways: the booted docker.service talks to the
+# system containerd (a different data-root), so images baked into the image during
+# the build are invisible at runtime; and large pulls hit an upstream GC race that
+# reaps in-progress snapshots/leases (moby/moby#52411, ddev/ddev#8136). Pin Docker
+# to the classic overlay2 graph driver, which dockerd manages itself under
+# /var/lib/docker, so baked images persist and large pulls are reliable.
+mkdir -p /etc/docker
+cat <<'EOF' > /etc/docker/daemon.json
+{
+    "features": {
+        "containerd-snapshotter": false
+    }
+}
+EOF
+
 if [ $RUNNING_IN_CI -eq 1 ]
 then
 
