@@ -163,6 +163,20 @@ docker --version || curl -fsSL https://get.docker.com | env -u VERSION sh || (
 
 systemctl enable docker
 
+# Docker 29+ defaults to the containerd image store (features.containerd-snapshotter=true).
+# That breaks BlueOS image builds: dind's dockerd writes pulled content into containerd's
+# content store (outside /var/lib/docker), which is the only directory pimod bakes into
+# the Pi image, so the pulls are invisible to dockerd on the booted device.
+# This change makes docker use the legacy image store.
+mkdir -p /etc/docker
+cat <<'EOF' > /etc/docker/daemon.json
+{
+    "features": {
+        "containerd-snapshotter": false
+    }
+}
+EOF
+
 if [ $RUNNING_IN_CI -eq 1 ]
 then
 
