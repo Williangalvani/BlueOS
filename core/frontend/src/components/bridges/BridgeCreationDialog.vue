@@ -22,8 +22,8 @@
             no-data-text="No serial ports available"
             :loading="updating_serial_ports"
             item-text="name"
-            :item-value="(item) => item.by_path ? item.by_path : item.name"
-            :item-disabled="(item) => item.current_user !== null"
+            :item-value="(item: SerialPortInfo) => item.by_path ? item.by_path : item.name"
+            :item-disabled="(item: SerialPortInfo) => item.current_user !== null"
             dense
           >
             <template #item="{ item }">
