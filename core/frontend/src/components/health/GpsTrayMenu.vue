@@ -81,6 +81,7 @@
 import Vue from 'vue'
 
 import mavlink2rest from '@/libs/MAVLink2Rest'
+import { Type } from '@/libs/MAVLink2Rest/mavlink2rest-ts/messages/mavlink2rest'
 import { GpsFixType } from '@/libs/MAVLink2Rest/mavlink2rest-ts/messages/mavlink2rest-enum'
 import { Message } from '@/libs/MAVLink2Rest/mavlink2rest-ts/messages/mavlink2rest-message'
 import autopilot_data from '@/store/autopilot'
@@ -100,10 +101,15 @@ export default Vue.extend({
       last_message_date: undefined as undefined | Date,
       gps_detected: false,
       global_position_int: undefined as undefined | Message.GlobalPositionInt,
-      gps_raw_int: undefined as undefined | Message.GpsRawInt,
+      gps_raw_int: undefined as undefined | Message.GpsRawInt | Message.Gps2Raw,
     }
   },
   computed: {
+    fix_type(): GpsFixType | undefined {
+      // mavlink2rest wraps enum fields as { type: <enum> } at runtime.
+      const fix_type = this.gps_raw_int?.fix_type as Type<GpsFixType> | undefined
+      return fix_type?.type
+    },
     values():
       Array<
         {
@@ -205,7 +211,7 @@ export default Vue.extend({
       return this.gps_detected
     },
     connection_description(): string {
-      switch (this.gps_raw_int?.fix_type?.type) {
+      switch (this.fix_type) {
         case GpsFixType.GPS_FIX_TYPE_NO_GPS:
           return 'No GPS connection'
         case GpsFixType.GPS_FIX_TYPE_NO_FIX:
@@ -229,7 +235,7 @@ export default Vue.extend({
       }
     },
     number_color(): string {
-      switch (this.gps_raw_int?.fix_type?.type) {
+      switch (this.fix_type) {
         case GpsFixType.GPS_FIX_TYPE_NO_FIX:
           return 'warning'
         case GpsFixType.GPS_FIX_TYPE_2D_FIX:
@@ -279,7 +285,7 @@ export default Vue.extend({
 
       this.last_message_date = new Date()
       this.gps_raw_int = message?.message as Message.GpsRawInt | Message.Gps2Raw
-      this.gps_detected = this.gps_raw_int?.fix_type?.type !== GpsFixType.GPS_FIX_TYPE_NO_GPS
+      this.gps_detected = this.fix_type !== GpsFixType.GPS_FIX_TYPE_NO_GPS
     }).setFrequency(0)
   },
 })
