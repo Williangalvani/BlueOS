@@ -2,6 +2,7 @@ import abc
 import json
 import os
 import pathlib
+import threading
 from typing import Any, Dict
 
 import pykson  # type: ignore
@@ -13,6 +14,10 @@ from commonwealth.settings.exceptions import (
 )
 from loguru import logger
 from pykson import Field, Pykson
+
+# Serialize concurrent saves so they don't race on the temporary file, and so the last writer serializes
+# the object after every previous mutation has landed (no lost updates).
+_save_lock = threading.Lock()
 
 
 class PyksonSettings(pykson.JsonObject):
@@ -90,20 +95,23 @@ class PyksonSettings(pykson.JsonObject):
         parent_path = file_path.parent.absolute()
         parent_path.mkdir(parents=True, exist_ok=True)
 
-        # Prepare data prior to operation
         logger.debug(f"Saving settings on: {file_path}")
-        json_data = json.dumps(json.loads(Pykson().to_json(self)), indent=4)
 
-        # Create a temporary file in same directory, write and rename it to the original file
-        temp_file = file_path.with_suffix(".tmp")
-        with open(temp_file, "w", encoding="utf-8") as settings_file:
-            settings_file.write(json_data)
-            # Ensure data is written to disk
-            settings_file.flush()
-            os.fsync(settings_file.fileno())
-        # Replace the original file with the temporary file, this operation is atomic if in the same filesystem
-        # https://docs.python.org/3/library/os.html#os.replace
-        temp_file.replace(file_path)
+        # Serialize inside the lock so the write section runs by a single thread at a time. This keeps the
+        # temporary file from colliding and ensures the last writer serializes every mutation made before it.
+        with _save_lock:
+            json_data = json.dumps(json.loads(Pykson().to_json(self)), indent=4)
+
+            # Create a temporary file in same directory, write and rename it to the original file
+            temp_file = file_path.with_suffix(".tmp")
+            with open(temp_file, "w", encoding="utf-8") as settings_file:
+                settings_file.write(json_data)
+                # Ensure data is written to disk
+                settings_file.flush()
+                os.fsync(settings_file.fileno())
+            # Replace the original file with the temporary file, this operation is atomic if in the same filesystem
+            # https://docs.python.org/3/library/os.html#os.replace
+            temp_file.replace(file_path)
 
     def reset(self) -> None:
         """Reset internal data to default values"""
