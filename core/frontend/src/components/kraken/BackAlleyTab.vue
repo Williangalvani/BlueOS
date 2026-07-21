@@ -355,7 +355,8 @@ export default Vue.extend({
         return []
       }
 
-      return (this.manifest as ExtensionData[]).sort(
+      const manifest = this.manifest as ExtensionData[]
+      return manifest.sort(
         (a, b) => (b?.repo_info?.downloads ?? 0) - (a?.repo_info?.downloads ?? 0),
       )
     },

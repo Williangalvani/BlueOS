@@ -98,7 +98,8 @@ import { VForm } from '@/types/vuetify'
 
 import { availableFirmwares, fetchCurrentBoard } from '../autopilot/AutopilotManagerUpdater'
 
-const REPOSITORY_URL = 'https://docs.bluerobotics.com/Blueos-Parameter-Repository/params_v1.json'
+const REPOSITORY_URL = 'https://raw.githubusercontent.com/Williangalvani/'
+  + 'Blueos-Parameter-Repository_/refs/heads/gh-pages/params_v1.json'
 
 const MAX_FETCH_PARAMS_RETRIES = 4
 

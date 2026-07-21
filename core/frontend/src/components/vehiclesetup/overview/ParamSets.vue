@@ -93,7 +93,8 @@ import { Dictionary } from '@/types/common'
 import { frontend_service } from '@/types/frontend_services'
 
 const notifier = new Notifier(frontend_service)
-const REPOSITORY_URL = 'https://docs.bluerobotics.com/Blueos-Parameter-Repository/params_v1.json'
+const REPOSITORY_URL = 'https://raw.githubusercontent.com/Williangalvani/'
+  + 'Blueos-Parameter-Repository_/refs/heads/gh-pages/params_v1.json'
 
 export default Vue.extend({
   name: 'ParamSets',
