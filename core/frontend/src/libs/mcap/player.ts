@@ -19,7 +19,6 @@ const MINIMUM_SAMPLE_DURATION_US = 1_000
 /** Frames spanning a recording gap keep the last picture on screen instead of leaving a hole. */
 const MAXIMUM_SAMPLE_DURATION_US = 10_000_000
 const RESUME_TOLERANCE_SECONDS = 0.25
-const GAP_JUMP_LIMIT_SECONDS = 5
 /** Frames to inspect at the start of a stream when a keyframe arrives without parameter sets. */
 const PARAMETER_SET_SCAN_FRAMES = 60
 /**
@@ -127,9 +126,10 @@ export class McapVideoPlayer {
 
   private sequence = 1
 
-  private resumeAt: number | null = null
-
   private internalSeek = false
+
+  /** Number of seeks currently pointing the stream at a new time. */
+  private restarts = 0
 
   private reachedEnd = false
 
@@ -197,6 +197,9 @@ export class McapVideoPlayer {
   }
 
   private emitStats(): void {
+    if (this.destroyed) {
+      return
+    }
     this.options.onStats?.(this.stats)
   }
 
@@ -207,6 +210,13 @@ export class McapVideoPlayer {
         return buffered.end(index) - currentTime
       }
     }
+    // A playhead sitting in a gap still has media waiting after it. Ignoring that would leave the
+    // filling loop convinced it has nothing buffered, and it would read on to the end of the file.
+    for (let index = 0; index < buffered.length; index += 1) {
+      if (buffered.start(index) > currentTime) {
+        return buffered.end(index) - buffered.start(index)
+      }
+    }
     return 0
   }
 
@@ -215,16 +225,7 @@ export class McapVideoPlayer {
   }
 
   private onWaiting = (): void => {
-    // Jump over holes left by recording gaps, which we will never fill because we only read forward.
-    const { buffered, currentTime } = this.video
-    for (let index = 0; index < buffered.length; index += 1) {
-      const start = buffered.start(index)
-      if (start > currentTime && start - currentTime < GAP_JUMP_LIMIT_SECONDS) {
-        this.internalSeek = true
-        this.video.currentTime = start + 0.001
-        return
-      }
-    }
+    this.alignPlayhead()
     this.scheduleFill()
   }
 
@@ -249,6 +250,18 @@ export class McapVideoPlayer {
 
   /** Restarts reading at a keyframe covering the requested time, dropping everything buffered. */
   private async restartAt(seconds: number): Promise<void> {
+    this.restarts += 1
+    try {
+      await this.reopenAt(seconds)
+    } finally {
+      this.restarts -= 1
+    }
+    if (this.restarts === 0) {
+      this.scheduleFill()
+    }
+  }
+
+  private async reopenAt(seconds: number): Promise<void> {
     this.controller.abort()
     await this.fillTask?.catch(() => undefined)
     if (this.destroyed) {
@@ -259,7 +272,6 @@ export class McapVideoPlayer {
     this.pending = []
     this.needsKeyframe = true
     this.reachedEnd = false
-    this.resumeAt = null
     this.loading = true
     this.emitStats()
 
@@ -267,11 +279,12 @@ export class McapVideoPlayer {
       await this.run(() => this.removeRange(0, Infinity))
     }
     await this.stream.seekToKeyframe(seconds, this.controller.signal)
-    this.scheduleFill()
   }
 
   private scheduleFill(): void {
-    if (this.destroyed || this.fillTask || this.reachedEnd) {
+    // Filling while the stream is being pointed at a new time would read on from the old position,
+    // which is both the wrong content and a needless download.
+    if (this.destroyed || this.restarts > 0 || this.fillTask || this.reachedEnd) {
       return
     }
     if (this.sourceBuffer && this.bufferedAhead() >= this.bufferAheadSeconds) {
@@ -297,6 +310,9 @@ export class McapVideoPlayer {
         // eslint-disable-next-line no-await-in-loop
         await this.flushFragment(true)
         this.reachedEnd = true
+        if (this.needsKeyframe) {
+          throw new Error('This video stream holds no keyframe, so there is nothing that can be decoded.')
+        }
         if (this.mediaSource.readyState === 'open') {
           this.mediaSource.endOfStream()
         }
@@ -364,7 +380,8 @@ export class McapVideoPlayer {
     }
     const config = this.parameterSets.buildConfig(format)
     if (!config) {
-      throw new Error('This video stream does not include the parameter sets needed to decode it.')
+      throw new Error(`This ${format.toUpperCase()} stream was recorded without the parameter sets`
+        + ' needed to decode it, so no player can show it.')
     }
 
     const mime = `video/mp4; codecs="${config.codec}"`
@@ -388,6 +405,7 @@ export class McapVideoPlayer {
   }
 
   private async flushFragment(flushAll = false): Promise<void> {
+    const { signal } = this.controller
     // The last frame is held back because its duration is only known once the next one arrives.
     const frames = flushAll ? this.pending : this.pending.slice(0, -1)
     if (frames.length === 0) {
@@ -409,15 +427,35 @@ export class McapVideoPlayer {
     await this.appendData(buildFragment(samples, baseMediaDecodeTime, this.sequence))
     this.sequence += 1
 
-    if (this.resumeAt === null) {
-      this.resumeAt = startSeconds
-      if (Math.abs(this.video.currentTime - startSeconds) > RESUME_TOLERANCE_SECONDS) {
-        this.internalSeek = true
-        this.video.currentTime = startSeconds
-      }
+    // A seek that happened while this fragment was being appended has already moved the playhead
+    // where it belongs, and reading has restarted elsewhere.
+    if (!signal.aborted) {
+      this.alignPlayhead()
     }
     this.loading = false
     this.emitStats()
+  }
+
+  /**
+   * Moves the playhead onto media that exists. Recordings start on a keyframe that is a little later
+   * than asked for, and they can hold gaps where a stream dropped out; since reading only goes
+   * forward, waiting for the missing media would stall playback for good.
+   */
+  private alignPlayhead(): void {
+    const { buffered, currentTime } = this.video
+    for (let index = 0; index < buffered.length; index += 1) {
+      if (currentTime >= buffered.start(index) - RESUME_TOLERANCE_SECONDS && currentTime <= buffered.end(index)) {
+        return
+      }
+    }
+    for (let index = 0; index < buffered.length; index += 1) {
+      const start = buffered.start(index)
+      if (start > currentTime) {
+        this.internalSeek = true
+        this.video.currentTime = start + 0.001
+        return
+      }
+    }
   }
 
   private async appendData(data: Uint8Array): Promise<void> {
