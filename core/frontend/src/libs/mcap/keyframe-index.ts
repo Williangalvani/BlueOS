@@ -32,14 +32,15 @@ export class KeyframeLocator {
   constructor(
     private reader: McapIndexedReader,
     private channelId: number,
-    private chunkPositions: number[],
+    private chunkPositions: () => number[],
   ) {}
 
   private async entriesAt(position: number, signal?: AbortSignal): Promise<McapMessageEntry[] | null> {
-    if (this.unavailable || position < 0 || position >= this.chunkPositions.length) {
+    const positions = this.chunkPositions()
+    if (this.unavailable || position < 0 || position >= positions.length) {
       return null
     }
-    const chunkIndex = this.chunkPositions[position]
+    const chunkIndex = positions[position]
     const cached = this.entriesByChunk.get(chunkIndex)
     if (cached) {
       return cached

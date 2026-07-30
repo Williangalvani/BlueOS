@@ -10,7 +10,10 @@ import { VideoFrame, VideoFrameDecoder, VideoTrack } from './video-track'
 const KEYFRAME_SEARCH_CHUNKS = 64
 
 export default class VideoFrameStream {
-  private chunkPositions: number[]
+  private chunkPositions: number[] = []
+
+  /** Chunk index length the positions were built from, since the reader loads the index lazily. */
+  private knownChunks = -1
 
   private cursor = 0
 
@@ -26,8 +29,16 @@ export default class VideoFrameStream {
       throw new Error(`Recording has no channel ${track.channelId}.`)
     }
     this.decoder = VideoFrameDecoder.create(reader, channel)
-    this.chunkPositions = reader.chunkIndexesForChannel(track.channelId)
-    this.locator = new KeyframeLocator(reader, track.channelId, this.chunkPositions)
+    this.locator = new KeyframeLocator(reader, track.channelId, () => this.positions())
+  }
+
+  private positions(): number[] {
+    const { length } = this.reader.summary.chunkIndexes
+    if (length !== this.knownChunks) {
+      this.chunkPositions = this.reader.chunkIndexesForChannel(this.track.channelId)
+      this.knownChunks = length
+    }
+    return this.chunkPositions
   }
 
   get startTime(): bigint {
@@ -52,7 +63,7 @@ export default class VideoFrameStream {
 
   private positionForTime(logTime: bigint): number {
     const chunkIndex = this.reader.findChunkIndexAtTime(this.track.channelId, logTime)
-    const position = this.chunkPositions.indexOf(chunkIndex)
+    const position = this.positions().indexOf(chunkIndex)
     return position >= 0 ? position : 0
   }
 
@@ -62,6 +73,7 @@ export default class VideoFrameStream {
    */
   async seekToKeyframe(seconds: number, signal?: AbortSignal): Promise<void> {
     const logTime = this.toLogTime(seconds)
+    await this.reader.loadChunkIndexesUntil(logTime, signal)
     const position = this.positionForTime(logTime)
     const hint = await this.locator.findBefore(logTime, position, KEYFRAME_SEARCH_CHUNKS, signal)
       ?? await this.locator.findForward(position, KEYFRAME_SEARCH_CHUNKS, signal)
@@ -97,10 +109,15 @@ export default class VideoFrameStream {
 
   async next(signal?: AbortSignal): Promise<VideoFrame | null> {
     while (this.queue.length === 0) {
-      if (this.cursor >= this.chunkPositions.length) {
-        return null
+      const positions = this.positions()
+      if (this.cursor >= positions.length) {
+        // eslint-disable-next-line no-await-in-loop
+        if (!await this.reader.loadMoreChunkIndexes(signal)) {
+          return null
+        }
+        continue
       }
-      const chunkIndex = this.chunkPositions[this.cursor]
+      const chunkIndex = positions[this.cursor]
       this.cursor += 1
       // eslint-disable-next-line no-await-in-loop
       const messages = await this.reader.readChunkMessages(chunkIndex, this.track.channelId, signal)

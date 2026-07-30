@@ -57,17 +57,27 @@ export class RecordReader {
   }
 }
 
-/** Walks the records of a summary or chunk section, ignoring records the caller has no use for. */
+/**
+ * Walks the records of a summary or chunk section, ignoring records the caller has no use for, and
+ * returns how many bytes were consumed. Records that reach past the end of the data are left alone,
+ * so a section can be read in windows by resuming at the returned offset.
+ */
 export function forEachRecord(
   data: Uint8Array,
   callback: (opcode: number, reader: RecordReader, end: number) => void,
-): void {
+): number {
   const reader = new RecordReader(data)
-  while (reader.remaining > 9) {
+  let consumed = 0
+  while (reader.remaining >= 9) {
     const opcode = reader.uint8()
     const length = reader.size()
     const end = reader.offset + length
+    if (end > data.length) {
+      break
+    }
     callback(opcode, reader, end)
     reader.offset = end
+    consumed = end
   }
+  return consumed
 }
