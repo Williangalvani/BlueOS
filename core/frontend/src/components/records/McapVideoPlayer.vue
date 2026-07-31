@@ -30,69 +30,99 @@
       />
     </div>
 
-    <div v-if="tracks.length > 0" class="d-flex align-center caption grey--text text--darken-1 mt-2">
-      <span
-        v-if="bytes_downloaded > 0"
-        v-tooltip="'Only the parts of the recording you watch are downloaded from the vehicle'"
-        class="mr-3"
-      >
-        {{ downloaded }} downloaded
-      </span>
-      <span v-if="tracks.length > 1">
-        {{ tracks.length }} streams playing together, sharing the same download
-      </span>
-      <v-spacer />
-      <span
-        v-if="clip"
-        v-tooltip="'Saving covers this part of the recording, starting from the keyframe before it'"
-        class="mr-2"
-      >
-        {{ clip_label }}
-      </span>
-      <v-btn
-        v-tooltip="'Start saving at the current position'"
-        icon
-        x-small
-        :color="clip_start !== null ? 'primary' : undefined"
-        @click="markClipStart"
-      >
-        <v-icon small>
-          mdi-ray-start
-        </v-icon>
-      </v-btn>
-      <v-btn
-        v-tooltip="'Stop saving at the current position'"
-        icon
-        x-small
-        :color="clip_end !== null ? 'primary' : undefined"
-        @click="markClipEnd"
-      >
-        <v-icon small>
-          mdi-ray-end
-        </v-icon>
-      </v-btn>
-      <v-btn
-        v-if="clip"
-        v-tooltip="'Save the whole recording again'"
-        icon
-        x-small
-        @click="clearClip"
-      >
-        <v-icon small>
-          mdi-close
-        </v-icon>
-      </v-btn>
-      <v-btn
-        v-tooltip="statistics ? 'Hide stream statistics' : 'Show stream statistics'"
-        icon
-        x-small
-        :color="statistics ? 'primary' : undefined"
-        @click="statistics = !statistics"
-      >
-        <v-icon small>
-          mdi-chart-box-outline
-        </v-icon>
-      </v-btn>
+    <div v-if="tracks.length > 0" class="mt-2">
+      <div class="d-flex align-center caption grey--text text--darken-1">
+        <span
+          v-if="bytes_downloaded > 0"
+          v-tooltip="'Only the parts of the recording you watch are downloaded from the vehicle'"
+          class="mr-3"
+        >
+          {{ downloaded }} downloaded
+        </span>
+        <span v-if="tracks.length > 1">
+          {{ tracks.length }} streams playing together, sharing the same download
+        </span>
+        <v-spacer />
+        <v-btn
+          v-tooltip="picking_clip ? 'Save whole streams again' : 'Choose which part of the streams to save'"
+          icon
+          x-small
+          :color="picking_clip ? 'primary' : undefined"
+          @click="toggleClipPicker"
+        >
+          <v-icon small>
+            mdi-content-cut
+          </v-icon>
+        </v-btn>
+        <v-btn
+          v-tooltip="statistics ? 'Hide stream statistics' : 'Show stream statistics'"
+          icon
+          x-small
+          :color="statistics ? 'primary' : undefined"
+          @click="statistics = !statistics"
+        >
+          <v-icon small>
+            mdi-chart-box-outline
+          </v-icon>
+        </v-btn>
+      </div>
+
+      <div v-if="picking_clip" class="mt-1">
+        <div class="d-flex align-center caption grey--text text--darken-1">
+          <span>0:00</span>
+          <div class="range-wrapper mx-2">
+            <v-range-slider
+              :value="clip_range"
+              :max="duration"
+              :step="clip_step"
+              :min="0"
+              hide-details
+              dense
+              thumb-label
+              color="primary"
+              @input="onRangeInput"
+              @change="onRangeSettled"
+            >
+              <template #thumb-label="{ value }">
+                {{ positionLabel(value) }}
+              </template>
+            </v-range-slider>
+            <div
+              :class="['playhead', $vuetify.theme.dark ? 'grey lighten-1' : 'grey darken-2']"
+              :style="playhead_style"
+            />
+          </div>
+          <span>{{ positionLabel(duration) }}</span>
+        </div>
+        <div class="d-flex align-center caption grey--text text--darken-1">
+          <span v-tooltip="'Saving starts from the keyframe before the chosen point'">
+            {{ clip_label }}
+          </span>
+          <v-spacer />
+          <v-btn
+            v-tooltip="'Move the start of the saved part to the playback position'"
+            x-small
+            text
+            @click="markClipStart"
+          >
+            <v-icon x-small left>
+              mdi-ray-start
+            </v-icon>
+            start here
+          </v-btn>
+          <v-btn
+            v-tooltip="'Move the end of the saved part to the playback position'"
+            x-small
+            text
+            @click="markClipEnd"
+          >
+            <v-icon x-small left>
+              mdi-ray-end
+            </v-icon>
+            end here
+          </v-btn>
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -112,10 +142,22 @@ import { prettifySize } from '@/utils/helper_functions'
 const SYNC_TOLERANCE_SECONDS = 0.5
 /** `HTMLMediaElement.HAVE_CURRENT_DATA`: the element has a frame for its current position. */
 const HAVE_CURRENT_DATA = 2
+/** Part offered when the picker opens, so that there is something to drag rather than a full range. */
+const DEFAULT_CLIP_SECONDS = 30
+/** How finely the picker cuts. Bounds land on multiples of it, so the end of a recording lies within. */
+const CLIP_STEP_SECONDS = 0.1
+/** Room the range slider leaves on each side for its thumbs, which the playhead marker has to match. */
+const SLIDER_THUMB_ROOM = '8px'
 
 function formatPosition(seconds: number): string {
   const total = Math.round(seconds)
   return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`
+}
+
+/** Reads a length as minutes and seconds, or as seconds alone while it is short. */
+function formatLength(seconds: number): string {
+  const total = Math.round(seconds)
+  return total < 60 ? `${total} s` : formatPosition(total)
 }
 
 export default Vue.extend({
@@ -138,25 +180,45 @@ export default Vue.extend({
       error: null as string | null,
       opening: true,
       statistics: false,
-      clip_start: null as number | null,
-      clip_end: null as number | null,
+      picking_clip: false,
+      clip_range: [0, 0],
+      moved_bound: 0,
+      position: 0,
     }
   },
   computed: {
     columns(): number {
       return Math.min(this.tracks.length, 2)
     },
-    /** Part of the recording the streams save, or null while nothing is marked. */
+    duration(): number {
+      return this.recording?.durationSeconds ?? 0
+    },
+    clip_step(): number {
+      return CLIP_STEP_SECONDS
+    },
+    /** Part of the recording the streams save, or null while they save all of it. */
     clip(): Mp4ExportRange | null {
-      if (this.clip_start === null && this.clip_end === null) {
+      const [start, end] = this.clip_range
+      const toTheEnd = end >= this.duration - CLIP_STEP_SECONDS
+      const whole = start <= 0 && toTheEnd
+      if (!this.picking_clip || whole) {
         return null
       }
-      return { startSeconds: this.clip_start ?? 0, endSeconds: this.clip_end ?? Infinity }
+      return { startSeconds: start, endSeconds: toTheEnd ? Infinity : end }
     },
     clip_label(): string {
-      const start = this.clip_start === null ? 'start' : formatPosition(this.clip_start)
-      const end = this.clip_end === null ? 'end' : formatPosition(this.clip_end)
-      return `saving ${start} to ${end}`
+      if (!this.clip) {
+        return 'saving the whole recording'
+      }
+      const [start, end] = this.clip_range
+      // Length from the shown bounds, so that it always adds up for whoever reads the three of them.
+      const length = Math.round(end) - Math.round(start)
+      return `saving ${formatPosition(start)} to ${formatPosition(end)} · ${formatLength(length)}`
+    },
+    /** Sits over the slider track, which is inset by the room its thumbs need. */
+    playhead_style(): Record<string, string> {
+      const fraction = this.duration > 0 ? Math.min(this.position / this.duration, 1) : 0
+      return { left: `calc(${SLIDER_THUMB_ROOM} + (100% - 2 * ${SLIDER_THUMB_ROOM}) * ${fraction})` }
     },
     downloaded(): string {
       return prettifySize(this.bytes_downloaded / 1024)
@@ -197,6 +259,9 @@ export default Vue.extend({
         video.addEventListener('seeked', this.syncFollowers)
         video.addEventListener('timeupdate', this.syncFollowers)
         video.addEventListener('ratechange', this.syncFollowers)
+        video.addEventListener('seeking', this.trackPosition)
+        video.addEventListener('seeked', this.trackPosition)
+        video.addEventListener('timeupdate', this.trackPosition)
       }
     },
     detachSync(): void {
@@ -209,6 +274,20 @@ export default Vue.extend({
       leader.removeEventListener('seeked', this.syncFollowers)
       leader.removeEventListener('timeupdate', this.syncFollowers)
       leader.removeEventListener('ratechange', this.syncFollowers)
+      leader.removeEventListener('seeking', this.trackPosition)
+      leader.removeEventListener('seeked', this.trackPosition)
+      leader.removeEventListener('timeupdate', this.trackPosition)
+    },
+    /**
+     * The streams share this position, as the others follow the one holding the controls. Media can
+     * run a moment past the recorded span, which marks are kept within so they stay comparable to it.
+     */
+    playbackPosition(): number {
+      const [leader] = this.videos
+      return Math.min(leader?.currentTime ?? 0, this.duration)
+    },
+    trackPosition(): void {
+      this.position = this.playbackPosition()
     },
     /**
      * Keeps the other streams on the time of the one being controlled. All streams share the
@@ -237,30 +316,44 @@ export default Vue.extend({
         }
       }
     },
-    /** Marks are taken from the stream holding the controls, whose time the others follow. */
-    markClipStart(): void {
-      const [leader] = this.videos
-      if (!leader) {
+    positionLabel(seconds: number): string {
+      return formatPosition(seconds)
+    },
+    /** Opens on a part around the playback position, since that is what the viewer is looking at. */
+    toggleClipPicker(): void {
+      this.picking_clip = !this.picking_clip
+      if (!this.picking_clip) {
         return
       }
-      this.clip_start = leader.currentTime
-      if (this.clip_end !== null && this.clip_end <= this.clip_start) {
-        this.clip_end = null
+      const start = Math.min(this.playbackPosition(), Math.max(this.duration - DEFAULT_CLIP_SECONDS, 0))
+      this.clip_range = [start, Math.min(start + DEFAULT_CLIP_SECONDS, this.duration)]
+    },
+    onRangeInput(range: number[]): void {
+      const [start, end] = this.clip_range
+      this.moved_bound = Math.abs(range[0] - start) >= Math.abs(range[1] - end) ? 0 : 1
+      this.clip_range = range
+    },
+    /** Shows the frame at the bound just dragged, once dragging stops: seeking on every step thrashes reads. */
+    onRangeSettled(range: number[]): void {
+      const [leader] = this.videos
+      if (leader) {
+        leader.currentTime = range[this.moved_bound]
       }
+    },
+    /**
+     * Marks are taken from the stream holding the controls, whose time the others follow. A mark
+     * placed past the opposite bound takes the rest of the recording with it, rather than leaving
+     * nothing to save.
+     */
+    markClipStart(): void {
+      const [, end] = this.clip_range
+      const at = this.playbackPosition()
+      this.clip_range = [at, end > at ? end : this.duration]
     },
     markClipEnd(): void {
-      const [leader] = this.videos
-      if (!leader) {
-        return
-      }
-      this.clip_end = leader.currentTime
-      if (this.clip_start !== null && this.clip_start >= this.clip_end) {
-        this.clip_start = null
-      }
-    },
-    clearClip(): void {
-      this.clip_start = null
-      this.clip_end = null
+      const [start] = this.clip_range
+      const at = this.playbackPosition()
+      this.clip_range = [start < at ? start : 0, at]
     },
     onExportError(error: unknown): void {
       this.error = error instanceof Error ? error.message : String(error)
@@ -281,5 +374,20 @@ export default Vue.extend({
 
 .stream-grid.columns-2 {
   grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+}
+
+.range-wrapper {
+  position: relative;
+  flex: 1;
+}
+
+.playhead {
+  position: absolute;
+  top: 50%;
+  width: 2px;
+  height: 14px;
+  transform: translate(-1px, -50%);
+  opacity: 0.7;
+  pointer-events: none;
 }
 </style>
