@@ -23,6 +23,7 @@
         :name="name"
         :controls="index === 0"
         :statistics="statistics"
+        :clip="clip"
         @ready="onStreamReady(index, $event)"
         @stats="onStats"
         @export-error="onExportError"
@@ -41,6 +42,46 @@
         {{ tracks.length }} streams playing together, sharing the same download
       </span>
       <v-spacer />
+      <span
+        v-if="clip"
+        v-tooltip="'Saving covers this part of the recording, starting from the keyframe before it'"
+        class="mr-2"
+      >
+        {{ clip_label }}
+      </span>
+      <v-btn
+        v-tooltip="'Start saving at the current position'"
+        icon
+        x-small
+        :color="clip_start !== null ? 'primary' : undefined"
+        @click="markClipStart"
+      >
+        <v-icon small>
+          mdi-ray-start
+        </v-icon>
+      </v-btn>
+      <v-btn
+        v-tooltip="'Stop saving at the current position'"
+        icon
+        x-small
+        :color="clip_end !== null ? 'primary' : undefined"
+        @click="markClipEnd"
+      >
+        <v-icon small>
+          mdi-ray-end
+        </v-icon>
+      </v-btn>
+      <v-btn
+        v-if="clip"
+        v-tooltip="'Save the whole recording again'"
+        icon
+        x-small
+        @click="clearClip"
+      >
+        <v-icon small>
+          mdi-close
+        </v-icon>
+      </v-btn>
       <v-btn
         v-tooltip="statistics ? 'Hide stream statistics' : 'Show stream statistics'"
         icon
@@ -60,6 +101,7 @@
 import Vue from 'vue'
 
 import McapVideoStream from '@/components/records/McapVideoStream.vue'
+import { Mp4ExportRange } from '@/libs/mcap/export'
 import {
   isMediaSourceSupported, McapVideoRecording, McapVideoStats, openMcapVideoRecording,
 } from '@/libs/mcap/player'
@@ -70,6 +112,11 @@ import { prettifySize } from '@/utils/helper_functions'
 const SYNC_TOLERANCE_SECONDS = 0.5
 /** `HTMLMediaElement.HAVE_CURRENT_DATA`: the element has a frame for its current position. */
 const HAVE_CURRENT_DATA = 2
+
+function formatPosition(seconds: number): string {
+  const total = Math.round(seconds)
+  return `${Math.floor(total / 60)}:${String(total % 60).padStart(2, '0')}`
+}
 
 export default Vue.extend({
   name: 'McapVideoPlayer',
@@ -91,11 +138,25 @@ export default Vue.extend({
       error: null as string | null,
       opening: true,
       statistics: false,
+      clip_start: null as number | null,
+      clip_end: null as number | null,
     }
   },
   computed: {
     columns(): number {
       return Math.min(this.tracks.length, 2)
+    },
+    /** Part of the recording the streams save, or null while nothing is marked. */
+    clip(): Mp4ExportRange | null {
+      if (this.clip_start === null && this.clip_end === null) {
+        return null
+      }
+      return { startSeconds: this.clip_start ?? 0, endSeconds: this.clip_end ?? Infinity }
+    },
+    clip_label(): string {
+      const start = this.clip_start === null ? 'start' : formatPosition(this.clip_start)
+      const end = this.clip_end === null ? 'end' : formatPosition(this.clip_end)
+      return `saving ${start} to ${end}`
     },
     downloaded(): string {
       return prettifySize(this.bytes_downloaded / 1024)
@@ -175,6 +236,31 @@ export default Vue.extend({
           follower.play().catch(() => undefined)
         }
       }
+    },
+    /** Marks are taken from the stream holding the controls, whose time the others follow. */
+    markClipStart(): void {
+      const [leader] = this.videos
+      if (!leader) {
+        return
+      }
+      this.clip_start = leader.currentTime
+      if (this.clip_end !== null && this.clip_end <= this.clip_start) {
+        this.clip_end = null
+      }
+    },
+    markClipEnd(): void {
+      const [leader] = this.videos
+      if (!leader) {
+        return
+      }
+      this.clip_end = leader.currentTime
+      if (this.clip_start !== null && this.clip_start >= this.clip_end) {
+        this.clip_start = null
+      }
+    },
+    clearClip(): void {
+      this.clip_start = null
+      this.clip_end = null
     },
     onExportError(error: unknown): void {
       this.error = error instanceof Error ? error.message : String(error)
