@@ -68,16 +68,18 @@
         <span v-if="stats.codec" class="ml-3">{{ stats.codec }}</span>
         <v-btn
           v-if="!error"
-          v-tooltip="clip ? 'Save the marked part of this stream as an MP4 file'
-            : 'Save this stream as an MP4 file'"
-          icon
+          v-tooltip="clip ? 'Save the chosen part of this stream as a video file'
+            : 'Save this whole stream as a video file'"
           x-small
+          text
+          color="primary"
           class="ml-2"
           @click="saveMp4"
         >
-          <v-icon small>
+          <v-icon x-small left>
             mdi-download
           </v-icon>
+          MP4
         </v-btn>
       </template>
     </div>
