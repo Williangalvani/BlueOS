@@ -9,7 +9,7 @@ import tempfile
 from functools import wraps
 from io import BytesIO
 from pathlib import Path
-from typing import Any, Callable, Iterator, List, Optional, Tuple
+from typing import Any, Callable, List, Optional
 from urllib.parse import quote
 
 from aiocache import cached
@@ -17,7 +17,7 @@ from commonwealth.utils.apis import GenericErrorHandlingRoute, PrettyJSONRespons
 from commonwealth.utils.general import file_is_open_async
 from commonwealth.utils.logs import InterceptHandler, init_logger
 from commonwealth.utils.sentry_config import init_sentry_async
-from fastapi import APIRouter, FastAPI, HTTPException, Request, Response, status
+from fastapi import APIRouter, FastAPI, HTTPException, status
 from fastapi.responses import HTMLResponse, StreamingResponse
 from fastapi_versioning import VersionedFastAPI, versioned_api_route
 from loguru import logger
@@ -26,10 +26,11 @@ from uvicorn import Config, Server
 
 SERVICE_NAME = "recorder-extractor"
 RECORDER_DIR = Path("/usr/blueos/userdata/recorder")
+# Where nginx serves the same directory from, which recordings are read through
+RECORDER_URL = "/userdata/recorder"
+SERVICE_URL = "/recorder-extractor/v1.0/recorder"
 PORT = 9150
-STREAM_CHUNK_SIZE = 256 * 1024
 SUPPORTED_SUFFIXES = (".mcap", ".mp4")
-MEDIA_TYPES = {".mcap": "application/mcap", ".mp4": "video/mp4"}
 
 MCAP_MAGIC = b"\x89MCAP0\r\n"
 # opcode + u64 length + summary_start + summary_offset_start + summary_crc
@@ -308,44 +309,6 @@ async def repair_unindexed_recordings() -> None:
             logger.exception(f"MCAP index check loop failed: {exception}")
 
 
-def parse_range_header(range_header: str, file_size: int) -> Optional[Tuple[int, int]]:
-    """Parse a single byte range, including the suffix form used to read the MCAP footer."""
-    if not range_header.startswith("bytes="):
-        return None
-    first_range = range_header[len("bytes=") :].split(",")[0].strip()
-    start_text, _, end_text = first_range.partition("-")
-
-    try:
-        if not start_text:
-            suffix_length = int(end_text)
-            if suffix_length <= 0:
-                return None
-            start = max(0, file_size - suffix_length)
-            end = file_size - 1
-        else:
-            start = int(start_text)
-            end = int(end_text) if end_text else file_size - 1
-    except ValueError:
-        return None
-
-    end = min(end, file_size - 1)
-    if start > end or start >= file_size:
-        return None
-    return start, end
-
-
-def read_file_range(path: Path, start: int, end: int) -> Iterator[bytes]:
-    remaining = end - start + 1
-    with path.open("rb") as recording:
-        recording.seek(start)
-        while remaining > 0:
-            data = recording.read(min(STREAM_CHUNK_SIZE, remaining))
-            if not data:
-                return
-            remaining -= len(data)
-            yield data
-
-
 def to_http_exception(endpoint: Callable[..., Any]) -> Callable[..., Any]:
     is_async = asyncio.iscoroutinefunction(endpoint)
 
@@ -379,7 +342,6 @@ recorder_router = APIRouter(
 )
 @to_http_exception
 async def list_recordings() -> List[RecordingFile]:
-    base_url = "/recorder-extractor/v1.0/recorder/files"
     files: List[RecordingFile] = []
     base_path = ensure_recorder_dir()
     recordings = [path for suffix in SUPPORTED_SUFFIXES for path in base_path.rglob(f"*{suffix}")]
@@ -387,17 +349,19 @@ async def list_recordings() -> List[RecordingFile]:
         stat = path.stat()
         relative_path = path.relative_to(base_path)
         safe_path = str(relative_path)
-        encoded_path = quote(safe_path, safe="")
         kind = path.suffix.lower().lstrip(".")
+        # Recordings are read straight from nginx, which serves them with byte ranges and sendfile,
+        # so playing and saving them costs the vehicle no more than the kernel copying bytes.
+        recording_url = f"{RECORDER_URL}/{quote(safe_path)}"
         files.append(
             RecordingFile(
                 name=path.name,
                 path=safe_path,
                 size_bytes=stat.st_size,
                 modified=stat.st_mtime,
-                download_url=f"{base_url}/{encoded_path}",
-                stream_url=f"{base_url}/{encoded_path}",
-                thumbnail_url=f"{base_url}/{encoded_path}/thumbnail" if kind == "mp4" else None,
+                download_url=recording_url,
+                stream_url=recording_url,
+                thumbnail_url=f"{SERVICE_URL}/files/{quote(safe_path, safe='')}/thumbnail" if kind == "mp4" else None,
                 kind=kind,
             )
         )
@@ -452,58 +416,9 @@ async def delete_recording(filename: str) -> None:
         ) from exception
 
 
-@recorder_router.api_route(
-    "/files/{filename:path}",
-    methods=["GET", "HEAD"],
-    summary="Download or stream a recording, honouring byte range requests.",
-)
-@to_http_exception
-async def get_recording(filename: str, request: Request) -> Response:
-    """
-    Serve a recording with range support.
-
-    Range requests are what allow the frontend to read the index of a huge MCAP file and then fetch
-    only the chunks it is about to play, instead of downloading the whole recording.
-    """
-    path = resolve_recording(filename)
-    file_size = path.stat().st_size
-    media_type = MEDIA_TYPES.get(path.suffix.lower(), "application/octet-stream")
-    headers = {"Accept-Ranges": "bytes"}
-
-    if request.method == "HEAD":
-        return Response(headers={**headers, "Content-Length": str(file_size)}, media_type=media_type)
-
-    range_header = request.headers.get("range")
-    if not range_header:
-        return StreamingResponse(
-            read_file_range(path, 0, file_size - 1),
-            media_type=media_type,
-            headers={**headers, "Content-Length": str(file_size)},
-        )
-
-    byte_range = parse_range_header(range_header, file_size)
-    if byte_range is None:
-        return Response(
-            status_code=status.HTTP_416_REQUESTED_RANGE_NOT_SATISFIABLE,
-            headers={**headers, "Content-Range": f"bytes */{file_size}"},
-        )
-
-    start, end = byte_range
-    return StreamingResponse(
-        read_file_range(path, start, end),
-        status_code=status.HTTP_206_PARTIAL_CONTENT,
-        media_type=media_type,
-        headers={
-            **headers,
-            "Content-Range": f"bytes {start}-{end}/{file_size}",
-            "Content-Length": str(end - start + 1),
-        },
-    )
-
-
 fast_api_app = FastAPI(
     title="Recorder Extractor API",
-    description="Serve MCAP recordings for streaming playback in the browser, and download.",
+    description="List recordings, keep them seekable, and preview them. Their bytes are served by nginx.",
     default_response_class=PrettyJSONResponse,
 )
 fast_api_app.router.route_class = GenericErrorHandlingRoute
