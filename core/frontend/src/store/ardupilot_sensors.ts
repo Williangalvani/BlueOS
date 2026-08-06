@@ -36,6 +36,12 @@ class ArdupilotSensorsStore extends VuexModule {
           .filter((param) => param.value !== 0)
           .map((parameter) => decode(parameter.name, parameter.value))
       }
+
+      get gps(): deviceId[] {
+        return autopilot_data.parameterRegex('^GPS\\d+_DEV_ID')
+          .filter((param) => param.value !== 0)
+          .map((parameter) => decode(parameter.name, parameter.value))
+      }
     
       get accelerometers_calibrated() {
         const results = {} as Dictionary<boolean>

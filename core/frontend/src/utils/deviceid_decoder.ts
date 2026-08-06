@@ -121,6 +121,39 @@ enum AIRSPEED_TYPE {
   AIRSPEED_ASP5033 = 0x0A,
 }
 
+// Matches AP_GPS_Backend::DevType in ArduPilot GPS_Backend.h
+enum GPS_TYPE {
+  UNKNOWN = 0x00,
+  UBLOX = 0x01,
+  UBLOX_5 = 0x02,
+  UBLOX_6 = 0x03,
+  UBLOX_7 = 0x04,
+  UBLOX_M8 = 0x05,
+  UBLOX_M8N = 0x06,
+  UBLOX_M9 = 0x07,
+  UBLOX_M9N = 0x08,
+  UBLOX_F9 = 0x09,
+  UBLOX_F9_ZED = 0x0A,
+  UBLOX_F9_NEO = 0x0B,
+  UBLOX_M10 = 0x0C,
+  UBLOX_F10 = 0x0D,
+  UBLOX_F20 = 0x0E,
+  UBLOX_X20 = 0x0F,
+  NMEA = 0x20,
+  SIRF = 0x21,
+  SBP = 0x22,
+  SBP2 = 0x23,
+  ERB = 0x24,
+  SBF = 0x25,
+  GSOF = 0x26,
+  NOVA = 0x27,
+  MAV = 0x28,
+  MSP = 0x29,
+  EXTERNAL_AHRS = 0x2A,
+  UAVCAN = 0x2B,
+  SITL = 0x2C,
+}
+
 function toHex(value: number): string {
   return Number(value).toString(16).padStart(2, '0')
 }
@@ -141,8 +174,11 @@ export default function decode(device: string, devid: number): deviceId {
   const bus = devid >> 3 & 0x1F
   const address = devid >> 8 & 0xFF
   const devtype = devid >> 16
-  // set deviceIdNumber to the last number of the "device" string or 1 if it's not a number
-  const deviceIdNumber = parseInt(device.slice(-1), 10) || 1
+  // Prefer instance number from names like GPS1_DEV_ID / BARO2_DEVID; fall back to trailing digit
+  const instanceMatch = device.match(/(?:GPS|BARO|TEMP|ARSPD?)(\d+)/)
+  const deviceIdNumber = instanceMatch
+    ? parseInt(instanceMatch[1], 10)
+    : (parseInt(device.slice(-1), 10) || 1)
 
   let decodedDevname = 'UNKNOWN'
 
@@ -171,6 +207,9 @@ export default function decode(device: string, devid: number): deviceId {
   }
   if (device.startsWith('ARSP')) {
     decodedDevname = AIRSPEED_TYPE[devtype] || 'UNKNOWN'
+  }
+  if (device.startsWith('GPS')) {
+    decodedDevname = GPS_TYPE[devtype] || 'UNKNOWN'
   }
   return {
     param: device,

@@ -110,6 +110,18 @@
               <td>{{ baro_status[baro.param] }}</td>
             </tr>
             <tr
+              v-for="gps in ardupilot_sensors.gps"
+              :key="gps.param"
+            >
+              <td><b>{{ pretty_gps_name(gps.deviceName) }}</b></td>
+              <td v-tooltip="'Global Positioning System receiver'">
+                GPS {{ gps.deviceIdNumber }}
+              </td>
+              <td>{{ print_bus(gps.busType) }} {{ gps.bus }}</td>
+              <td>{{ `0x${gps.address}` }}</td>
+              <td>{{ gps_status[gps.param] }}</td>
+            </tr>
+            <tr
               v-for="sensor in celsius"
               :key="sensor.param"
             >
@@ -135,6 +147,7 @@ import ardupilot_sensors, { ArdupilotSensorsStore } from '@/store/ardupilot_sens
 import autopilot_data from '@/store/autopilot'
 import autopilot from '@/store/autopilot_manager'
 import mavlink from '@/store/mavlink'
+import { GpsFixType } from '@/libs/MAVLink2Rest/mavlink2rest-ts/messages/mavlink2rest-enum'
 import { printParam } from '@/types/autopilot/parameter'
 import { Dictionary } from '@/types/common'
 import { BUS_TYPE, deviceId } from '@/utils/deviceid_decoder'
@@ -244,16 +257,77 @@ export default Vue.extend({
       }
       return results
     },
+    gps_status(): Dictionary<string> {
+      const results = {} as Dictionary<string>
+      for (const gps of ardupilot_sensors.gps) {
+        const msg = gps.deviceIdNumber === 1 ? 'GPS_RAW_INT' : 'GPS2_RAW'
+        const fix_type = mavlink_store_get(mavlink, `${msg}.messageData.message.fix_type.type`) as string | undefined
+        const satellites = mavlink_store_get(mavlink, `${msg}.messageData.message.satellites_visible`) as number | undefined
+        results[gps.param] = `${this.fix_type_label(fix_type)}, ${satellites ?? '--'} sats`
+      }
+      return results
+    },
   },
   mounted() {
     mavlink.setMessageRefreshRate({ messageName: 'SCALED_PRESSURE$', refreshRate: 1 })
     mavlink.setMessageRefreshRate({ messageName: 'SCALED_PRESSURE2$', refreshRate: 1 })
     mavlink.setMessageRefreshRate({ messageName: 'SCALED_PRESSURE3$', refreshRate: 1 })
     mavlink.setMessageRefreshRate({ messageName: 'VFR_HUD', refreshRate: 1 })
+    mavlink.setMessageRefreshRate({ messageName: 'GPS_RAW_INT', refreshRate: 1 })
+    mavlink.setMessageRefreshRate({ messageName: 'GPS2_RAW', refreshRate: 1 })
   },
   methods: {
     print_bus(bus: BUS_TYPE): string {
       return BUS_TYPE[bus]
+    },
+    pretty_gps_name(name: string | undefined): string {
+      if (!name || name === 'UNKNOWN') {
+        return 'UNKNOWN'
+      }
+      // UBLOX_F9_ZED → u-blox ZED-F9P, UBLOX_M8N → u-blox M8N, etc.
+      if (name === 'UBLOX_F9_ZED') {
+        return 'u-blox ZED-F9P'
+      }
+      if (name === 'UBLOX_F9_NEO') {
+        return 'u-blox NEO-F9P'
+      }
+      if (name.startsWith('UBLOX_')) {
+        return `u-blox ${name.slice('UBLOX_'.length)}`
+      }
+      if (name === 'UBLOX') {
+        return 'u-blox'
+      }
+      if (name === 'UAVCAN') {
+        return 'DroneCAN'
+      }
+      if (name === 'EXTERNAL_AHRS') {
+        return 'External AHRS'
+      }
+      return name
+    },
+    fix_type_label(fix_type: string | undefined): string {
+      switch (fix_type) {
+        case GpsFixType.GPS_FIX_TYPE_NO_GPS:
+          return 'No GPS'
+        case GpsFixType.GPS_FIX_TYPE_NO_FIX:
+          return 'No fix'
+        case GpsFixType.GPS_FIX_TYPE_2D_FIX:
+          return '2D'
+        case GpsFixType.GPS_FIX_TYPE_3D_FIX:
+          return '3D'
+        case GpsFixType.GPS_FIX_TYPE_DGPS:
+          return 'DGPS'
+        case GpsFixType.GPS_FIX_TYPE_RTK_FLOAT:
+          return 'RTK float'
+        case GpsFixType.GPS_FIX_TYPE_RTK_FIXED:
+          return 'RTK fixed'
+        case GpsFixType.GPS_FIX_TYPE_STATIC:
+          return 'Static'
+        case GpsFixType.GPS_FIX_TYPE_PPP:
+          return 'PPP'
+        default:
+          return 'Detected'
+      }
     },
   },
 })
