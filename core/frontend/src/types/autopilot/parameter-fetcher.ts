@@ -56,6 +56,26 @@ export default class ParameterFetcher {
     }
   }
 
+  requestAllParams(): void {
+    if (autopilot.restarting) {
+      return
+    }
+    mavlink2rest.sendMessage(
+      {
+        header: {
+          system_id: 255,
+          component_id: 0,
+          sequence: 0,
+        },
+        message: {
+          type: 'PARAM_REQUEST_LIST',
+          target_system: ardupilot_data.system_id,
+          target_component: 1,
+        },
+      },
+    )
+  }
+
   requestParamsWatchdog(): void {
     if (this.total_params_count !== null
       && this.loaded_params_count > 0
@@ -73,20 +93,7 @@ export default class ParameterFetcher {
     }
     // we don't have all parameters, and haven't received any for at least 5 seconds
     // let's ask for the parameters again.
-    mavlink2rest.sendMessage(
-      {
-        header: {
-          system_id: 255,
-          component_id: 0,
-          sequence: 0,
-        },
-        message: {
-          type: 'PARAM_REQUEST_LIST',
-          target_system: ardupilot_data.system_id,
-          target_component: 1,
-        },
-      },
-    )
+    this.requestAllParams()
     this.watchdog_last_count = this.loaded_params_count
   }
 
@@ -103,7 +110,21 @@ export default class ParameterFetcher {
       }
 
       const param_name = receivedMessage.message.param_id.join('').replace(/\0/g, '')
-      const { param_index, param_value, param_type } = receivedMessage.message
+      const {
+        param_count, param_index, param_value, param_type,
+      } = receivedMessage.message
+      // Enabling a feature can add/remove params; re-fetch the full set when the count changes.
+      if (param_count
+        && this.total_params_count !== null
+        && param_count !== this.total_params_count) {
+        if (this.store) {
+          this.store.reset()
+        } else {
+          this.reset()
+        }
+        this.requestAllParams()
+        return
+      }
       // We need this due to mismatches between js 64-bit floats and REAL32 in MAVLink
       const trimmed_value = Math.round(param_value * 10000) / 10000
       if (param_index === 65535) {
@@ -121,8 +142,8 @@ export default class ParameterFetcher {
             paramType: param_type,
           },
         )
-        if (receivedMessage.message.param_count) {
-          this.total_params_count = receivedMessage.message.param_count
+        if (param_count) {
+          this.total_params_count = param_count
         }
         this.loaded_params_count = this.parameter_table.size()
       }
