@@ -92,7 +92,7 @@ export interface McapVideoSummary {
   bytesRead: number
 }
 
-/** Reads what a recording contains without downloading its chunk index. */
+/** Reads recording metadata (schemas, channels, statistics, and with `@mcap/core` the chunk index). */
 export async function readMcapVideoSummary(url: string, signal?: AbortSignal): Promise<McapVideoSummary> {
   const source = new HttpByteSource(url)
   const reader = await McapIndexedReader.open(source, { metadataOnly: true, signal })

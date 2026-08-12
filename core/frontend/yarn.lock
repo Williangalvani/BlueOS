@@ -1268,6 +1268,11 @@
   resolved "https://registry.yarnpkg.com/@foxglove/cdr/-/cdr-3.3.0.tgz#8d273e1d6a11b8b3c508162c41073d4dad78cc5c"
   integrity sha512-CjeA6ka/0cddVzQZY0qTEbExw849C7dD1aGpa+KeEzx0LZNxsQvvhsqWeGjszVM4BzwPcyWHwsiOZv27zbnnFA==
 
+"@foxglove/crc@^0.0.3":
+  version "0.0.3"
+  resolved "https://registry.yarnpkg.com/@foxglove/crc/-/crc-0.0.3.tgz#04cd8816454e14f1ec48de17c949199b4b3ec9c2"
+  integrity sha512-DjIZsnL3CyP/yQ/vUYA9cjrD0a/8YXejI5ZmsaOiT16cLfZcTwaCxIN01/ys4jsy+dZCQ/9DnWFn7AEFbiMDaA==
+
 "@foxglove/message-definition@^0.3.1":
   version "0.3.1"
   resolved "https://registry.yarnpkg.com/@foxglove/message-definition/-/message-definition-0.3.1.tgz#63f48e8f3de47bba8943d8bfa8021af635254f1c"
@@ -1455,6 +1460,15 @@
   version "1.3.0"
   resolved "https://registry.yarnpkg.com/@lokesh.dhakar/quantize/-/quantize-1.3.0.tgz#04476889953aca94614fbc79e9a43adc7979179a"
   integrity sha512-4KBSyaMj65d8A+2vnzLxtHFu4OmBU4IKO0yLxZ171Itdf9jGV4w+WbG7VsKts2jUdRkFSzsZqpZOz6hTB3qGAw==
+
+"@mcap/core@2.2.1":
+  version "2.2.1"
+  resolved "https://registry.yarnpkg.com/@mcap/core/-/core-2.2.1.tgz#752b46581353f0883350618804a1ca983b1bd750"
+  integrity sha512-Qj0NSqxmFA6DlwYZqlnYHApcQl6jaVAFcUlYxFJCRKK6dymJAfdw98EIGnzAxLi/xw6rjQ8GFRyVzuoswFn+UA==
+  dependencies:
+    "@foxglove/crc" "^0.0.3"
+    heap-js "^2.2.0"
+    tslib "^2.5.0"
 
 "@mdi/font@^7.1.96":
   version "7.2.96"
@@ -4574,6 +4588,11 @@ hasown@^2.0.0, hasown@^2.0.2:
   integrity sha512-0hJU9SCPvmMzIBdZFqNPXWa6dqh7WdH0cII9y+CyS8rG3nL48Bclra9HmKhVVUHyPWNH5Y7xDwAB7bfgSjkUMQ==
   dependencies:
     function-bind "^1.1.2"
+
+heap-js@^2.2.0:
+  version "2.7.1"
+  resolved "https://registry.yarnpkg.com/heap-js/-/heap-js-2.7.1.tgz#3f152279e42214725cac405257554b000b178cc4"
+  integrity sha512-EQfezRg0NCZGNlhlDR3Evrw1FVL2G3LhU7EgPoxufQKruNBSYA8MiRPHeWbU+36o+Fhel0wMwM+sLEiBAlNLJA==
 
 hookified@^1.14.0, hookified@^1.15.0:
   version "1.15.1"

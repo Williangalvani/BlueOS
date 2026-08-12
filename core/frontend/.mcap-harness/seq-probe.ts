@@ -1,30 +1,7 @@
-import { openSync, readSync, statSync } from 'fs'
-
 import VideoFrameStream from '../src/libs/mcap/frame-stream'
 import { McapIndexedReader } from '../src/libs/mcap/reader'
-import { ByteSource } from '../src/libs/mcap/source'
 import { listVideoTracks, VideoTrack } from '../src/libs/mcap/video-track'
-
-class FileSource implements ByteSource {
-  bytesRead = 0
-
-  private fd: number
-
-  constructor(private path: string) {
-    this.fd = openSync(path, 'r')
-  }
-
-  async size(): Promise<number> {
-    return statSync(this.path).size
-  }
-
-  async read(offset: number, length: number): Promise<Uint8Array> {
-    const buffer = Buffer.allocUnsafe(length)
-    const read = readSync(this.fd, buffer, 0, length, offset)
-    this.bytesRead += read
-    return new Uint8Array(buffer.buffer, buffer.byteOffset, read)
-  }
-}
+import { FileSource } from './file-source'
 
 /**
  * Reads a track with every `drop`th message taken away, which is what a recording written by a

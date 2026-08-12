@@ -1,9 +1,14 @@
-/** Random access byte source, so the MCAP reader can stay agnostic about where the bytes come from. */
-export interface ByteSource {
-  size(signal?: AbortSignal): Promise<number>
-  read(offset: number, length: number, signal?: AbortSignal): Promise<Uint8Array>
+import type { IReadable } from '@mcap/core'
+
+/**
+ * Random-access byte source for MCAP. Extends Foxglove's IReadable with download accounting and an
+ * AbortSignal the caller can swap in before a read, since IReadable itself has no abort parameter.
+ */
+export interface ByteSource extends IReadable {
   /** Bytes actually transferred so far, used to show the real cost of playback to the user. */
   readonly bytesRead: number
+  /** Applied to the next underlying transfer; cleared by the caller when the operation ends. */
+  abortSignal?: AbortSignal
 }
 
 /** Bytes fetched from the end of the file to learn its size and read the MCAP footer at once. */
@@ -12,48 +17,59 @@ const TAIL_SIZE = 4096
 export class HttpByteSource implements ByteSource {
   bytesRead = 0
 
-  private total: number | null = null
+  abortSignal?: AbortSignal
 
-  private tail: { offset: number, data: Uint8Array } | null = null
+  private total: bigint | null = null
+
+  private tail: { offset: bigint, data: Uint8Array } | null = null
 
   constructor(public readonly url: string) {}
 
-  async size(signal?: AbortSignal): Promise<number> {
+  async size(): Promise<bigint> {
     if (this.total === null) {
-      await this.readTail(signal)
+      await this.readTail()
     }
-    return this.total ?? 0
+    return this.total ?? 0n
   }
 
-  async read(offset: number, length: number, signal?: AbortSignal): Promise<Uint8Array> {
+  async read(offset: bigint, size: bigint): Promise<Uint8Array> {
+    const length = Number(size)
+    const start = Number(offset)
     if (length <= 0) {
       return new Uint8Array()
     }
-    const cached = this.fromTail(offset, length)
+    const cached = this.fromTail(start, length)
     if (cached) {
       return cached
     }
-    const { data } = await this.request(`bytes=${offset}-${offset + length - 1}`, signal)
+    const { data } = await this.request(`bytes=${start}-${start + length - 1}`)
     return data
   }
 
   private fromTail(offset: number, length: number): Uint8Array | null {
-    if (!this.tail || offset < this.tail.offset || offset + length > this.tail.offset + this.tail.data.length) {
+    if (!this.tail) {
       return null
     }
-    const start = offset - this.tail.offset
+    const tailOffset = Number(this.tail.offset)
+    if (offset < tailOffset || offset + length > tailOffset + this.tail.data.length) {
+      return null
+    }
+    const start = offset - tailOffset
     return this.tail.data.subarray(start, start + length)
   }
 
   /** A suffix range tells us the total size and gives us the footer in a single request. */
-  private async readTail(signal?: AbortSignal): Promise<void> {
-    const { data, total } = await this.request(`bytes=-${TAIL_SIZE}`, signal)
-    this.total = total
-    this.tail = { offset: Math.max(0, total - data.length), data }
+  private async readTail(): Promise<void> {
+    const { data, total } = await this.request(`bytes=-${TAIL_SIZE}`)
+    this.total = BigInt(total)
+    this.tail = { offset: BigInt(Math.max(0, total - data.length)), data }
   }
 
-  private async request(range: string, signal?: AbortSignal): Promise<{ data: Uint8Array, total: number }> {
-    const response = await fetch(this.url, { headers: { Range: range }, signal })
+  private async request(range: string): Promise<{ data: Uint8Array, total: number }> {
+    const response = await fetch(this.url, {
+      headers: { Range: range },
+      signal: this.abortSignal,
+    })
     if (response.status !== 206) {
       // A 200 here means the whole file is on its way, which we must never do on a vehicle link.
       response.body?.cancel()

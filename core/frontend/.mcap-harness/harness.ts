@@ -1,38 +1,13 @@
 import {
-  closeSync, openSync, readSync, statSync, writeFileSync,
+  writeFileSync,
 } from 'fs'
 
 import { CodecConfig, ParameterSetCache, toMp4Sample } from '../src/libs/mcap/codec'
 import VideoFrameStream from '../src/libs/mcap/frame-stream'
 import { buildFragment, buildInitSegment, Mp4Sample } from '../src/libs/mcap/mp4'
 import { McapIndexedReader } from '../src/libs/mcap/reader'
-import { ByteSource } from '../src/libs/mcap/source'
 import { listVideoTracks } from '../src/libs/mcap/video-track'
-
-class FileSource implements ByteSource {
-  bytesRead = 0
-
-  private fd: number
-
-  constructor(private path: string) {
-    this.fd = openSync(path, 'r')
-  }
-
-  async size(): Promise<number> {
-    return statSync(this.path).size
-  }
-
-  async read(offset: number, length: number): Promise<Uint8Array> {
-    const buffer = Buffer.allocUnsafe(length)
-    const read = readSync(this.fd, buffer, 0, length, offset)
-    this.bytesRead += read
-    return new Uint8Array(buffer.buffer, buffer.byteOffset, read)
-  }
-
-  close(): void {
-    closeSync(this.fd)
-  }
-}
+import { FileSource } from './file-source'
 
 async function main(): Promise<void> {
   const [path, output, secondsArgument, seekArgument] = process.argv.slice(2)

@@ -1,32 +1,11 @@
 /** Saves a recording's video stream as MP4 the same way the browser does, for checking with ffmpeg. */
-import { closeSync, openSync, readSync, statSync, writeFileSync } from 'fs'
+import { writeFileSync } from 'fs'
 
 import { exportTrackAsMp4 } from '../src/libs/mcap/export'
 import { openMcapVideoRecording } from '../src/libs/mcap/player'
 import { McapIndexedReader } from '../src/libs/mcap/reader'
-import { ByteSource } from '../src/libs/mcap/source'
 import { listVideoTracks } from '../src/libs/mcap/video-track'
-
-class FileSource implements ByteSource {
-  bytesRead = 0
-
-  private fd: number
-
-  constructor(private path: string) {
-    this.fd = openSync(path, 'r')
-  }
-
-  async size(): Promise<number> {
-    return statSync(this.path).size
-  }
-
-  async read(offset: number, length: number): Promise<Uint8Array> {
-    const buffer = Buffer.allocUnsafe(length)
-    const read = readSync(this.fd, buffer, 0, length, offset)
-    this.bytesRead += read
-    return new Uint8Array(buffer.buffer, buffer.byteOffset, read)
-  }
-}
+import { FileSource } from './file-source'
 
 /** Part of the recording to save, as the player would mark it: FROM=90 TO=120 saves those seconds. */
 function wantedRange(): { startSeconds: number, endSeconds: number } | undefined {

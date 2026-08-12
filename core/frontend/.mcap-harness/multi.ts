@@ -1,39 +1,9 @@
 /** Reads every video stream of a recording at once, to measure what simultaneous playback costs. */
-import { closeSync, openSync, readSync, statSync } from 'fs'
-
 import { ParameterSetCache, toMp4Sample } from '../src/libs/mcap/codec'
 import VideoFrameStream from '../src/libs/mcap/frame-stream'
 import { McapIndexedReader } from '../src/libs/mcap/reader'
-import { ByteSource } from '../src/libs/mcap/source'
 import { listVideoTracks } from '../src/libs/mcap/video-track'
-
-class FileSource implements ByteSource {
-  bytesRead = 0
-
-  requests = 0
-
-  private fd: number
-
-  constructor(private path: string) {
-    this.fd = openSync(path, 'r')
-  }
-
-  async size(): Promise<number> {
-    return statSync(this.path).size
-  }
-
-  async read(offset: number, length: number): Promise<Uint8Array> {
-    const buffer = Buffer.allocUnsafe(length)
-    const read = readSync(this.fd, buffer, 0, length, offset)
-    this.bytesRead += read
-    this.requests += 1
-    return new Uint8Array(buffer.buffer, buffer.byteOffset, read)
-  }
-
-  close(): void {
-    closeSync(this.fd)
-  }
-}
+import { FileSource } from './file-source'
 
 interface Progress {
   name: string
