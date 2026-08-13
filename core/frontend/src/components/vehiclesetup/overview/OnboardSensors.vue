@@ -110,8 +110,8 @@
               <td>{{ baro_status[baro.param] }}</td>
             </tr>
             <tr
-              v-for="sensor in celsius"
-              :key="sensor.param"
+              v-for="sensor in temperature_sensors"
+              :key="sensor.deviceName"
             >
               <td><b>{{ sensor.deviceName ?? 'UNKNOWN' }}</b></td>
               <td v-tooltip="'Used to estimate altitude/depth'">
@@ -119,7 +119,7 @@
               </td>
               <td>{{ print_bus(sensor.busType) }} {{ sensor.bus }}</td>
               <td>{{ `0x${sensor.address}` }}</td>
-              <td>{{ celsius_temperature }} ºC</td>
+              <td>{{ sensor.temperature }} ºC</td>
             </tr>
           </tbody>
         </template>
@@ -144,25 +144,28 @@ export default Vue.extend({
   name: 'OnboardSensors',
   computed: {
     // DEV_ID params do not exist yet for temperature sensors, so here we detect the incoming message instead
-    celsius_temperature(): number | undefined {
-      return mavlink_store_get(mavlink, 'SCALED_PRESSURE3.messageData.message.temperature') as number / 100.0
-    },
-    celsius(): deviceId[] {
-      if (!this.celsius_temperature) {
-        return []
-      }
-      return [
-        {
-          bus: 1,
+    temperature_sensors(): (deviceId & { temperature: number })[] {
+      const sensors = [
+        { message: 'SCALED_PRESSURE3', address: '77', deviceName: 'Celsius' },
+        { message: 'BATTERY_STATUS', address: '72', deviceName: 'Celsius 2' },
+      ]
+      return sensors.flatMap(({ message, address, deviceName }) => {
+        const temperature = mavlink_store_get(mavlink, `${message}.messageData.message.temperature`) as number
+        if (!temperature) {
+          return []
+        }
+        return [{
+          bus: 6,
           paramValue: 0,
           deviceIdNumber: 0,
           devtype: 0,
           busType: BUS_TYPE.I2C,
-          address: '77',
-          deviceName: 'Celsius',
+          address,
+          deviceName,
           param: '-',
-        },
-      ]
+          temperature: temperature / 100.0,
+        }]
+      })
     },
     compass_description(): Dictionary<string> {
       const results = {} as Dictionary<string>
@@ -249,6 +252,7 @@ export default Vue.extend({
     mavlink.setMessageRefreshRate({ messageName: 'SCALED_PRESSURE$', refreshRate: 1 })
     mavlink.setMessageRefreshRate({ messageName: 'SCALED_PRESSURE2$', refreshRate: 1 })
     mavlink.setMessageRefreshRate({ messageName: 'SCALED_PRESSURE3$', refreshRate: 1 })
+    mavlink.setMessageRefreshRate({ messageName: 'BATTERY_STATUS', refreshRate: 1 })
     mavlink.setMessageRefreshRate({ messageName: 'VFR_HUD', refreshRate: 1 })
   },
   methods: {
